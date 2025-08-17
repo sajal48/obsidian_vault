@@ -1,0 +1,20 @@
+# Obsidian configuration and cache files
+.obsidian/
+
+# Obsidian trash folder
+.trash/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
