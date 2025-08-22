@@ -22,6 +22,8 @@ The Signal Protocol is an end-to-end encryption protocol used by Signal, WhatsAp
 - **Type**: Ed25519 key pair
 - **Lifetime**: Permanent (unless device reset)
 - **Function**: Used to sign prekeys and verify identity
+- **Private Key Storage**: Securely stored on device, never transmitted
+- **Public Key Distribution**: Uploaded to server for verification
 
 ### 2. Prekeys
 - **Signed Prekey**: 
@@ -29,24 +31,65 @@ The Signal Protocol is an end-to-end encryption protocol used by Signal, WhatsAp
   - Signed by identity key
   - Rotated periodically (weekly)
   - Provides forward secrecy
+  - **Private Key**: Stored locally, used for key agreement
+  - **Public Key**: Uploaded to server with signature
   
 - **One-time Prekeys**:
   - Curve25519 key pairs
   - Unsigned
   - Single-use only
-  - Deleted after use
+  - **Private Key**: Deleted immediately after use
+  - **Public Key**: Consumed from server after use
 
 ### 3. Ephemeral Keys
 - **Purpose**: Session establishment
 - **Type**: Curve25519 key pair
 - **Lifetime**: Single message exchange
 - **Function**: Part of X3DH key agreement
+- **Private Key**: Generated temporarily, deleted after key agreement
 
 ### 4. Chain Keys and Message Keys
 - **Root Key**: Derives new chain keys
 - **Chain Key**: Derives message keys and next chain key
 - **Message Key**: Encrypts individual messages
 - **Ratchet Keys**: Drive the Double Ratchet forward
+
+## Private Key Management
+
+### Key Storage Principles
+1. **Never Leave Device**: Private keys never transmitted over network
+2. **Secure Storage**: Stored in device's secure keystore/keychain
+3. **Memory Protection**: Cleared from memory after use
+4. **No Persistence**: Ephemeral and message keys deleted immediately
+
+### Private Key Lifecycle
+
+| Key Type | Generation | Storage | Deletion |
+|----------|------------|---------|----------|
+| Identity Private Key | Device setup | Secure keystore | Device reset only |
+| Signed Prekey Private | Weekly rotation | Secure storage | After rotation |
+| One-time Prekey Private | Batch generation | Temporary storage | After single use |
+| Ephemeral Private | Per session | Memory only | After key agreement |
+| Message Private Keys | Per message | Memory only | Immediate after use |
+
+### Security Measures for Private Keys
+
+#### Device-Level Protection
+- **Hardware Security Module (HSM)**: When available
+- **Trusted Execution Environment (TEE)**: ARM TrustZone, Intel SGX
+- **Keystore Encryption**: OS-level key protection
+- **Biometric Protection**: Fingerprint/face unlock for key access
+
+#### Application-Level Protection
+- **Key Derivation**: PBKDF2/Argon2 for user-derived keys
+- **Memory Clearing**: Explicit zeroing of key material
+- **Anti-Debugging**: Protection against memory dumps
+- **Root/Jailbreak Detection**: Additional security on compromised devices
+
+#### Cryptographic Protection
+- **Forward Secrecy**: Old private keys cannot decrypt new messages
+- **Post-Compromise Security**: New key generation heals from compromise
+- **Key Separation**: Different keys for different purposes
 
 ## Message Flow: Device A → Server → Device B
 
