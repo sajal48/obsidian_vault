@@ -131,6 +131,12 @@ Device A                    Server                     Device B
 
 **Shared Secret** = KDF(DH1 || DH2 || DH3 || DH4)
 
+#### Private Key Usage in X3DH:
+- **Device A** uses its private identity key and ephemeral private key
+- **Device B** uses its private identity key, signed prekey private, and one-time prekey private
+- **Server never sees**: Any private keys or the shared secret
+- **Key Cleanup**: Ephemeral and one-time private keys deleted after use
+
 ### Phase 3: Message Encryption and Transmission
 
 ```
@@ -258,6 +264,28 @@ EncryptedMessage = {
 ### Key Compromise
 - **Protection**: Forward secrecy and post-compromise security
 - **Automatic**: Key rotation and deletion
+
+### Private Key Compromise Scenarios
+
+#### Identity Key Compromise
+- **Impact**: Attacker can impersonate user and read messages sent to compromised identity
+- **Mitigation**: Safety number verification, key rotation after detection
+- **Recovery**: Generate new identity key, re-establish all sessions
+
+#### Prekey Compromise  
+- **Impact**: Limited to messages using compromised prekey
+- **Mitigation**: Automatic weekly rotation of signed prekeys
+- **Recovery**: Forward secrecy protects future messages
+
+#### Session Key Compromise
+- **Impact**: Attacker can read messages until next DH ratchet step
+- **Mitigation**: Frequent key rotation in Double Ratchet
+- **Recovery**: Next message with new DH key heals the session
+
+#### Device Compromise
+- **Impact**: All current private keys potentially compromised
+- **Mitigation**: Remote wipe, session reset, safety number changes
+- **Recovery**: Post-compromise security through new key generation
 
 ## References
 
