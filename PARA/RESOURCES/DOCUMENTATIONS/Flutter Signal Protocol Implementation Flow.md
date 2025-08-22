@@ -494,3 +494,77 @@ Sealed Sender: Hide sender identity from server
 - [ ] Security audit
 - [ ] Scalability testing
 - [ ] User experience polish
+
+---
+
+## libsignal_protocol_dart Key Classes & Methods
+
+### Key Generation Functions
+```dart
+// Core key generation methods
+IdentityKeyPair generateIdentityKeyPair()
+int generateRegistrationId(bool extendedRange)
+List<PreKeyRecord> generatePreKeys(int start, int count)
+SignedPreKeyRecord generateSignedPreKey(IdentityKeyPair identityKey, int signedPreKeyId)
+```
+
+### Store Interfaces Implementation
+```dart
+// In-Memory implementations (provided by library)
+InMemorySessionStore() // Implements SessionStore
+InMemoryPreKeyStore() // Implements PreKeyStore  
+InMemorySignedPreKeyStore() // Implements SignedPreKeyStore
+InMemoryIdentityKeyStore(identityKeyPair, registrationId) // Implements IdentityKeyStore
+
+// Key storage methods
+await preKeyStore.storePreKey(preKey.id, preKey)
+await signedPreKeyStore.storeSignedPreKey(signedPreKey.id, signedPreKey)
+```
+
+### Session Management Classes
+```dart
+// Address for identifying remote party
+SignalProtocolAddress(userId, deviceId)
+
+// Building sessions
+SessionBuilder(sessionStore, preKeyStore, signedPreKeyStore, identityStore, remoteAddress)
+await sessionBuilder.processPreKeyBundle(retrievedPreKey)
+
+// Encrypting/Decrypting messages  
+SessionCipher(sessionStore, preKeyStore, signedPreKeyStore, identityStore, remoteAddress)
+CiphertextMessage ciphertext = await sessionCipher.encrypt(messageBytes)
+Uint8List plaintext = await sessionCipher.decrypt(ciphertext)
+```
+
+### Message Types
+```dart
+// Different types of encrypted messages
+CiphertextMessage.serialize() // Convert to bytes for transmission
+CiphertextMessage.fromSerialized(bytes) // Reconstruct from bytes
+ciphertext.getType() // Returns MESSAGE_TYPE or PREKEY_TYPE
+```
+
+### Key Bundle Structure (for Firebase)
+```dart
+// Structure to store in Firebase Firestore
+class PreKeyBundle {
+  final int registrationId;
+  final int deviceId;
+  final int preKeyId;
+  final ECPublicKey preKeyPublic;
+  final int signedPreKeyId;
+  final ECPublicKey signedPreKeyPublic;
+  final Uint8List signedPreKeySignature;
+  final IdentityKey identityKey;
+}
+```
+
+### Session State Management
+```dart
+// Check if session exists
+bool hasSession = await sessionStore.containsSession(remoteAddress);
+
+// Session persistence (for app restart survival)
+// You'll need to implement persistent versions of the stores
+// that save/load session state to/from local database
+```
