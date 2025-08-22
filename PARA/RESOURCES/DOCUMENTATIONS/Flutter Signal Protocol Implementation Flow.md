@@ -36,19 +36,18 @@ User Input (Phone/Email) → Firebase Auth → Generate User ID
 ```
 
 #### 1.2 Signal Protocol Key Generation (Local Device)
-```
-Generate Identity Key Pair
-├── Identity Private Key → Store in Flutter Secure Storage
-└── Identity Public Key → Prepare for upload
+```dart
+// Install time key generation
+final identityKeyPair = generateIdentityKeyPair();
+final registrationId = generateRegistrationId(false);
+final preKeys = generatePreKeys(0, 110);  // Generate 110 one-time prekeys
+final signedPreKey = generateSignedPreKey(identityKeyPair, 0);
 
-Generate Signed Prekey Bundle
-├── Signed Prekey Private → Store in Flutter Secure Storage
-├── Signed Prekey Public → Prepare for upload
-└── Signature → Sign with Identity Private Key
-
-Generate One-Time Prekeys (100 keys)
-├── One-Time Private Keys → Store in Flutter Secure Storage
-└── One-Time Public Keys → Prepare for upload
+Storage Plan:
+├── identityKeyPair → Store in Flutter Secure Storage
+├── registrationId → Store in Flutter Secure Storage  
+├── preKeys → Store in InMemoryPreKeyStore + Secure Storage backup
+└── signedPreKey → Store in InMemorySignedPreKeyStore + Secure Storage backup
 ```
 
 #### 1.3 Key Upload to Firebase
@@ -63,22 +62,36 @@ Firebase Cloud Function: uploadUserKeys()
 ```
 
 #### 1.4 Local Storage Setup
-```
-Flutter Secure Storage Structure:
-├── identity_private_key
-├── signed_prekey_private
-├── one_time_keys_private: {keyId: privateKey}
-├── registration_id
-└── device_id
+```dart
+// Initialize Signal Protocol Stores
+final sessionStore = InMemorySessionStore();
+final preKeyStore = InMemoryPreKeyStore();
+final signedPreKeyStore = InMemorySignedPreKeyStore();
+final identityStore = InMemoryIdentityKeyStore(identityKeyPair, registrationId);
+
+// Store all prekeys
+for (var p in preKeys) {
+  await preKeyStore.storePreKey(p.id, p);
+}
+await signedPreKeyStore.storeSignedPreKey(signedPreKey.id, signedPreKey);
+
+Flutter Secure Storage Backup:
+├── identity_key_pair → Serialized identityKeyPair
+├── registration_id → registrationId
+├── pre_keys_backup → Serialized preKeys array
+└── signed_pre_key_backup → Serialized signedPreKey
 ```
 
 #### 1.5 Session Store Initialization
-```
-Initialize SQLite Database:
-├── sessions_table
-├── pre_keys_table
-├── signed_pre_keys_table
-└── identity_keys_table
+```dart
+// No SQLite needed - Using In-Memory Stores
+// But for persistence across app restarts, implement:
+// - PersistentSessionStore
+// - PersistentPreKeyStore  
+// - PersistentSignedPreKeyStore
+// - PersistentIdentityKeyStore
+
+// These would extend the In-Memory stores and add SQLite persistence
 ```
 
 ---
@@ -115,12 +128,24 @@ Generate New Identity Key Pair
 ```
 
 #### 2.4 Local Storage Recreation
-```
-Clear All Local Storage
-├── Delete old session database
-├── Generate new registration ID
-├── Store new private keys
-└── Initialize fresh session store
+```dart
+// Clear and reinitialize stores
+final newIdentityKeyPair = generateIdentityKeyPair();
+final newRegistrationId = generateRegistrationId(false);
+final newPreKeys = generatePreKeys(0, 110);
+final newSignedPreKey = generateSignedPreKey(newIdentityKeyPair, 0);
+
+// Create fresh stores
+final sessionStore = InMemorySessionStore();
+final preKeyStore = InMemoryPreKeyStore();  
+final signedPreKeyStore = InMemorySignedPreKeyStore();
+final identityStore = InMemoryIdentityKeyStore(newIdentityKeyPair, newRegistrationId);
+
+// Populate stores
+for (var p in newPreKeys) {
+  await preKeyStore.storePreKey(p.id, p);
+}
+await signedPreKeyStore.storeSignedPreKey(newSignedPreKey.id, newSignedPreKey);
 ```
 
 #### 2.5 Contact Notification
@@ -143,53 +168,64 @@ User Input → Compose Message → Select Recipient
 ```
 
 #### 3.2 Session Check
-```
-Check Local Session Store
-├── Session Exists → Use existing session
-└── No Session → Initiate new session (3.3)
+```dart
+// Check if session exists with recipient
+final remoteAddress = SignalProtocolAddress(recipientUserId, deviceId);
+final hasSession = await sessionStore.containsSession(remoteAddress);
+
+if (hasSession) {
+  // Use existing session
+  final sessionCipher = SessionCipher(sessionStore, preKeyStore, 
+      signedPreKeyStore, identityStore, remoteAddress);
+} else {
+  // Need to build new session (go to 3.3)
+}
 ```
 
-#### 3.3 New Session Initiation (X3DH)
-```
-Firebase Cloud Function: fetchRecipientKeys()
-├── Input: Recipient User ID
-├── Fetch from Firestore: /users/{recipientId}/keys/
-│   ├── Identity Key
-│   ├── Signed Prekey
-│   └── One One-Time Key (mark as used)
-└── Return: Key Bundle
+#### 3.3 New Session Initiation (Building Session)
+```dart
+// Fetch recipient's key bundle from Firebase
+final retrievedPreKey = await fetchRecipientKeyBundle(recipientUserId);
 
-Local X3DH Calculation:
-├── Generate Ephemeral Key Pair
-├── Perform DH calculations (DH1, DH2, DH3, DH4)
-├── Derive Initial Root Key and Chain Key
-└── Store Session in local SQLite
+// Build session using SessionBuilder
+final remoteAddress = SignalProtocolAddress(recipientUserId, deviceId);
+final sessionBuilder = SessionBuilder(sessionStore, preKeyStore,
+    signedPreKeyStore, identityStore, remoteAddress);
+
+// Process the retrieved prekey bundle (performs X3DH internally)
+await sessionBuilder.processPreKeyBundle(retrievedPreKey);
+
+// Session is now established and stored in sessionStore
 ```
 
 #### 3.4 Message Encryption
-```
-Double Ratchet Encryption:
-├── Get current Chain Key from session
-├── Derive Message Key
-├── Encrypt message with AES-256-GCM
-├── Generate MAC
-├── Update session state
-└── Create encrypted message envelope
+```dart
+// Create SessionCipher for encryption
+final sessionCipher = SessionCipher(sessionStore, preKeyStore,
+    signedPreKeyStore, identityStore, remoteAddress);
+
+// Encrypt the message
+final messageBytes = utf8.encode(messageText);
+final ciphertext = await sessionCipher.encrypt(messageBytes);
+
+// ciphertext contains the encrypted message ready for transmission
+// The Double Ratchet algorithm is handled internally by SessionCipher
 ```
 
 #### 3.5 Message Upload
-```
-Firebase Cloud Function: sendMessage()
-├── Input: Encrypted Message + Metadata
-├── Store in Firestore: /messages/{messageId}
-│   ├── senderId
-│   ├── recipientId
-│   ├── encryptedContent
-│   ├── header (DH public key, counters)
-│   ├── timestamp
-│   └── messageType
-├── Add to Realtime DB: /messageQueue/{recipientId}/{messageId}
-└── Trigger push notification
+```dart
+// Prepare message for Firebase upload
+final encryptedMessage = {
+  'senderId': currentUserId,
+  'recipientId': recipientUserId,
+  'ciphertext': ciphertext.serialize(), // Serialized CiphertextMessage
+  'type': ciphertext.getType(), // MESSAGE_TYPE or PREKEY_TYPE
+  'timestamp': DateTime.now().millisecondsSinceEpoch,
+  'messageId': generateMessageId(),
+};
+
+// Upload via Firebase Cloud Function
+await sendMessageToFirebase(encryptedMessage);
 ```
 
 #### 3.6 Local Message Storage
@@ -226,24 +262,33 @@ Firebase Realtime DB Listener: /messageQueue/{userId}/
 ```
 
 #### 4.3 Session Management
-```
-Check Local Session Store:
-├── Session Exists → Load session state
-└── No Session → Initialize from message header
+```dart
+// Load existing session
+final remoteAddress = SignalProtocolAddress(senderId, deviceId);
+final hasSession = await sessionStore.containsSession(remoteAddress);
+
+if (!hasSession) {
+  // This should not happen for normal messages
+  // PreKeyMessage should have been sent first
+  throw Exception('No session found for sender');
+}
 ```
 
 #### 4.4 Message Decryption
-```
-Double Ratchet Decryption:
-├── Extract DH public key from header
-├── Check if DH ratchet step needed
-│   ├── New DH key → Perform DH ratchet
-│   └── Same DH key → Use existing chain
-├── Derive Message Key from Chain Key
-├── Decrypt message content
-├── Verify MAC
-├── Update session state
-└── Handle out-of-order messages (if any)
+```dart
+// Create SessionCipher for decryption
+final sessionCipher = SessionCipher(sessionStore, preKeyStore,
+    signedPreKeyStore, identityStore, remoteAddress);
+
+// Deserialize the received ciphertext
+final ciphertext = CiphertextMessage.fromSerialized(encryptedMessage['ciphertext']);
+
+// Decrypt the message
+final decryptedBytes = await sessionCipher.decrypt(ciphertext);
+final decryptedMessage = utf8.decode(decryptedBytes);
+
+// Double Ratchet algorithm is handled internally by SessionCipher
+// Session state is automatically updated
 ```
 
 #### 4.5 Message Processing
@@ -317,14 +362,28 @@ Firebase Cloud Function: sendDeliveryReceipt()
 
 ### Local Flutter Storage
 
+### Local Flutter Storage
+
 #### Flutter Secure Storage
+```dart
+// Key-value pairs stored securely
+identity_key_pair: String // Serialized IdentityKeyPair
+registration_id: int // Generated registration ID
+signed_pre_key_backup: String // Serialized SignedPreKey for recovery
+pre_keys_backup: String // JSON array of serialized PreKeys
+device_id: String // UUID for this device installation
 ```
-identity_private_key: Base64 encoded Ed25519 private key
-signed_prekey_private: Base64 encoded Curve25519 private key
-current_signed_prekey_id: Integer
-one_time_keys_private: JSON {keyId: privateKey}
-registration_id: Integer (random 14-bit number)
-device_id: String (UUID)
+
+#### In-Memory Stores (Runtime)
+```dart
+// These stores hold the active keys during app runtime
+InMemorySessionStore sessionStore;
+InMemoryPreKeyStore preKeyStore;
+InMemorySignedPreKeyStore signedPreKeyStore; 
+InMemoryIdentityKeyStore identityStore;
+
+// For persistence across app restarts, implement:
+// PersistentSessionStore, PersistentPreKeyStore, etc.
 ```
 
 #### SQLite Database Schema
