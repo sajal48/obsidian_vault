@@ -1,0 +1,53 @@
+{
+	"nodes":[
+		{"id":"new-user-reg","type":"text","x":100,"y":100,"width":300,"height":200,"text":"# Scenario 1: New User Registration\n\n1. **User Input** (Phone/Email)\n2. **Firebase Auth** → User ID\n3. **Generate Keys Locally**:\n   - Identity Key Pair\n   - Signed Prekey Bundle  \n   - One-Time Prekeys (100)\n4. **Store Private Keys** → Flutter Secure Storage\n5. **Upload Public Keys** → Firebase Firestore\n6. **Initialize Session Store** → SQLite"},
+		
+		{"id":"app-reinstall","type":"text","x":500,"y":100,"width":300,"height":200,"text":"# Scenario 2: App Reinstall\n\n1. **Firebase Auth Login**\n2. **Check Existing Keys** in Firestore\n3. **User Choice**:\n   - Restore (can't decrypt old)\n   - Fresh Start (recommended)\n4. **Generate New Keys**\n5. **Mark Old Keys Deprecated**\n6. **Notify Contacts** of key change"},
+		
+		{"id":"send-message","type":"text","x":100,"y":400,"width":300,"height":250,"text":"# Scenario 3: Send Message\n\n1. **Compose Message**\n2. **Check Session** (local SQLite)\n3. **If No Session**:\n   - Fetch recipient keys (Firebase)\n   - Perform X3DH key agreement\n   - Create new session\n4. **Encrypt Message** (Double Ratchet)\n5. **Upload to Firebase**\n6. **Trigger Push Notification**"},
+		
+		{"id":"receive-message","type":"text","x":500,"y":400,"width":300,"height":250,"text":"# Scenario 4: Receive Message\n\n1. **Push Notification** received\n2. **Fetch Message** from Firebase\n3. **Load Session** from SQLite\n4. **Decrypt Message** (Double Ratchet)\n5. **Update UI** with decrypted content\n6. **Send Delivery Receipt**\n7. **Clean Up Used Keys**"},
+		
+		{"id":"flutter-app","type":"text","x":300,"y":50,"width":200,"height":80,"text":"# Flutter App\n**libsignal_protocol_dart**","color":"blue"},
+		
+		{"id":"firebase-backend","type":"text","x":300,"y":750,"width":200,"height":120,"text":"# Firebase Backend\n- **Firestore**: Key Storage\n- **Cloud Functions**: Key Management\n- **Realtime DB**: Message Queue\n- **Push Notifications**","color":"orange"},
+		
+		{"id":"local-storage","type":"text","x":50,"y":700,"width":200,"height":120,"text":"# Local Storage\n- **Secure Storage**: Private Keys\n- **SQLite**: Sessions, Messages\n- **Cache**: Temporary data","color":"green"},
+		
+		{"id":"key-types","type":"text","x":550,"y":700,"width":250,"height":150,"text":"# Key Types\n- **Identity Key**: Long-term identity\n- **Signed Prekey**: Weekly rotation\n- **One-Time Keys**: Single use\n- **Ephemeral Keys**: Per session\n- **Message Keys**: Per message","color":"purple"},
+		
+		{"id":"x3dh-process","type":"text","x":900,"y":200,"width":250,"height":200,"text":"# X3DH Key Agreement\n\n1. **Fetch Recipient Keys**\n2. **Generate Ephemeral Key**\n3. **Calculate DH**:\n   - DH1 = DH(IK_A, SPK_B)\n   - DH2 = DH(EK_A, IK_B)\n   - DH3 = DH(EK_A, SPK_B)\n   - DH4 = DH(EK_A, OPK_B)\n4. **Derive Shared Secret**","color":"red"},
+		
+		{"id":"double-ratchet","type":"text","x":900,"y":450,"width":250,"height":200,"text":"# Double Ratchet\n\n1. **DH Ratchet**: New keys per message\n2. **Symmetric Ratchet**: Derive message keys\n3. **Forward Secrecy**: Delete old keys\n4. **Post-Compromise Security**: Heal from compromise","color":"red"},
+		
+		{"id":"security-flow","type":"text","x":300,"y":900,"width":400,"height":100,"text":"# Security Properties\n**Forward Secrecy** | **Post-Compromise Security** | **Deniability** | **Key Verification**","color":"gray"}
+	],
+	
+	"edges":[
+		{"id":"edge1","fromNode":"flutter-app","toNode":"new-user-reg","label":"User Registration"},
+		{"id":"edge2","fromNode":"flutter-app","toNode":"app-reinstall","label":"Reinstall/Login"},
+		{"id":"edge3","fromNode":"flutter-app","toNode":"send-message","label":"Send Message"},
+		{"id":"edge4","fromNode":"flutter-app","toNode":"receive-message","label":"Receive Message"},
+		
+		{"id":"edge5","fromNode":"new-user-reg","toNode":"firebase-backend","label":"Upload Public Keys"},
+		{"id":"edge6","fromNode":"app-reinstall","toNode":"firebase-backend","label":"Check/Update Keys"},
+		{"id":"edge7","fromNode":"send-message","toNode":"firebase-backend","label":"Store Encrypted Message"},
+		{"id":"edge8","fromNode":"receive-message","toNode":"firebase-backend","label":"Fetch Message"},
+		
+		{"id":"edge9","fromNode":"new-user-reg","toNode":"local-storage","label":"Store Private Keys"},
+		{"id":"edge10","fromNode":"app-reinstall","toNode":"local-storage","label":"Clear/Recreate Storage"},
+		{"id":"edge11","fromNode":"send-message","toNode":"local-storage","label":"Store Session/Message"},
+		{"id":"edge12","fromNode":"receive-message","toNode":"local-storage","label":"Update Session/Message"},
+		
+		{"id":"edge13","fromNode":"send-message","toNode":"x3dh-process","label":"New Session"},
+		{"id":"edge14","fromNode":"x3dh-process","toNode":"double-ratchet","label":"Establish Session"},
+		{"id":"edge15","fromNode":"double-ratchet","toNode":"receive-message","label":"Decrypt Message"},
+		
+		{"id":"edge16","fromNode":"key-types","toNode":"new-user-reg","label":"Generate All Types"},
+		{"id":"edge17","fromNode":"key-types","toNode":"app-reinstall","label":"Regenerate Keys"},
+		
+		{"id":"edge18","fromNode":"security-flow","toNode":"double-ratchet","label":"Cryptographic Guarantees"},
+		{"id":"edge19","fromNode":"local-storage","toNode":"security-flow","label":"Secure Key Storage"},
+		{"id":"edge20","fromNode":"firebase-backend","toNode":"security-flow","label":"Zero-Knowledge Server"}
+	]
+}
