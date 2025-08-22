@@ -465,6 +465,156 @@ Sealed Sender: Hide sender identity from server
 
 ---
 
+---
+
+## Scenario 5: Message Delivery During App Deletion (Critical Edge Case)
+
+### The Problem: User B Deletes App While Messages Are In-Transit
+
+#### Timeline of Events:
+```
+1. User A and B have active Signal session
+2. User B deletes app (loses all session state)
+3. User A sends Message 1 (using old session)
+4. User A sends Message 2 (using old session)
+5. User B reinstalls app
+6. User B chooses "Restore Backup" or "Fresh Start"
+```
+
+### Analysis: Can B Decrypt A's Messages?
+
+#### Case 1: B Chooses "Fresh Start" (New Keys)
+```
+Result: ❌ CANNOT DECRYPT
+Reason: 
+├── A's messages encrypted with old session state
+├── B generates completely new identity keys
+├── No way to recover old session state
+└── Forward secrecy prevents decryption
+
+Action Required:
+├── A detects B's key change (safety number change)
+├── A must re-establish session with B's new keys
+├── A should resend the 2 messages (user decision)
+└── Future messages will work normally
+```
+
+#### Case 2: B Chooses "Restore Backup" (Same Keys)
+```
+Result: ❌ STILL CANNOT DECRYPT
+Reason:
+├── Session state is stored locally (not in backup)
+├── Double Ratchet session state is lost
+├── A's messages reference chain keys B no longer has
+├── Session desynchronization occurred
+
+What's Lost:
+├── Root Key state
+├── Chain Key counters  
+├── Sending/Receiving key chains
+├── Message counter positions
+└── Skipped message keys
+
+What's Restored:
+├── Identity Key Pair ✓
+├── Signed PreKey ✓  
+├── One-Time PreKeys ✓
+└── Registration ID ✓
+```
+
+### Technical Deep Dive: Why Messages Are Lost
+
+#### Double Ratchet State Dependency
+```dart
+// Session state that's lost when app is deleted:
+RatchetState {
+  DHs,         // Current sending DH key pair
+  DHr,         // Current receiving DH public key
+  RK,          // Root key (derives chain keys)
+  CKs,         // Chain key for sending
+  CKr,         // Chain key for receiving  
+  Ns,          // Message number for sending
+  Nr,          // Message number for receiving
+  PN,          // Previous chain length
+  MKSKIPPED    // Skipped message keys for out-of-order
+}
+
+// When B deletes app, ALL of this state is lost forever
+// A's messages depend on this exact state to decrypt
+```
+
+### Solution Patterns
+
+#### Option 1: Session Re-establishment Detection
+```dart
+// In your Firebase message handling
+if (decryptionFailed && ciphertext.getType() == MESSAGE_TYPE) {
+  // Regular message failed - session might be broken
+  await requestSessionReset(senderId);
+  // Store failed message for later retry
+  await storeFailedMessage(messageId, encryptedData);
+}
+
+// Sender (A) should detect and handle:
+if (receivedSessionResetRequest) {
+  // Re-establish session with fresh X3DH
+  await rebuildSessionWith(recipientId);
+  // Optionally resend recent failed messages
+  await resendFailedMessages(recipientId);
+}
+```
+
+#### Option 2: Message Recovery Flow
+```dart
+// Store messages that can't be decrypted
+class FailedMessage {
+  final String messageId;
+  final String senderId;
+  final Uint8List encryptedData;
+  final DateTime timestamp;
+  final int retryCount;
+}
+
+// Retry decryption after session re-establishment
+async retryFailedMessages(String senderId) {
+  final failedMessages = await getFailedMessagesFor(senderId);
+  for (final msg in failedMessages) {
+    try {
+      final decrypted = await sessionCipher.decrypt(msg.encryptedData);
+      await processDecryptedMessage(msg.messageId, decrypted);
+      await deleteFailedMessage(msg.messageId);
+    } catch (e) {
+      if (msg.retryCount > 3) {
+        await markMessageAsUnrecoverable(msg.messageId);
+      }
+    }
+  }
+}
+```
+
+### User Experience Recommendations
+
+#### What Users Should Expect
+```
+❌ "Messages sent while you were offline will be lost"
+✅ "Some recent messages may need to be resent"
+
+❌ Technical error messages
+✅ "Secure connection re-established with [Contact]"
+```
+
+#### Recommended UX Flow
+```
+1. B reinstalls and chooses restore/fresh start
+2. A sends messages that fail to decrypt
+3. App automatically detects failure and requests session reset
+4. Show B: "Secure connection with A has been re-established"  
+5. Show A: "B's security keys changed. Recent messages may need to be resent"
+6. Both users can continue messaging normally
+```
+
+---
+
 ## Implementation Checklist
 
 ### Phase 1: Basic Setup
